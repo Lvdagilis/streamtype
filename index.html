@@ -59,14 +59,27 @@
 
     /* ── Blur mode background (shares layout with peek overlay) ─── */
     #blur-bg {
-      filter: blur(6px);
       opacity: 0;
       pointer-events: none;
       transition: opacity 0.3s ease;
       z-index: 0;
       overflow: hidden;
     }
-    body.blur-on #blur-bg { opacity: 0.8; }
+    body.blur-on #blur-bg { opacity: 1; }
+
+    /* Blur is applied per-child so we can leave one paragraph sharp */
+    body.blur-on #blur-bg > * {
+      filter: blur(6px);
+      opacity: 0.6;
+    }
+    /* In blur + sentence mode, keep the most recent paragraph readable
+       and hide the dim line above the word — it's no longer needed */
+    body.blur-on.sentence-mode #blur-bg > *:last-child {
+      filter: none;
+      opacity: 1;
+      color: #d8d8d8;
+    }
+    body.blur-on.sentence-mode #sentence-context { display: none; }
 
     /* Ensure word/sentence sit above the blurred background */
     #word, #sentence-context { position: relative; z-index: 2; }
@@ -414,6 +427,8 @@
         return;
       }
       blurBgEl.innerHTML = renderMarkdown(fullText);
+      // Pin to bottom so the most recent content stays visible as the page fills
+      blurBgEl.scrollTop = blurBgEl.scrollHeight;
     }
 
     // ── Display mode (word / sentence) — persisted ─────────────────────────────
@@ -664,6 +679,8 @@
       }
       peekEl.classList.add('visible');
       peekBtn.classList.add('active');
+      // Match blur-bg behaviour: most recent writing stays in view
+      peekEl.scrollTop = peekEl.scrollHeight;
     }
     function hidePeek() {
       peekEl.classList.remove('visible');
