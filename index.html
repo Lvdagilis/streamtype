@@ -57,6 +57,20 @@
     body.size-m #sentence-context { font-size: clamp(0.85rem, 1.8vw, 1.05rem); }
     body.size-l #sentence-context { font-size: clamp(1rem, 2.3vw, 1.4rem); }
 
+    /* ── Blur mode background (shares layout with peek overlay) ─── */
+    #blur-bg {
+      filter: blur(6px);
+      opacity: 0;
+      pointer-events: none;
+      transition: opacity 0.3s ease;
+      z-index: 0;
+      overflow: hidden;
+    }
+    body.blur-on #blur-bg { opacity: 0.8; }
+
+    /* Ensure word/sentence sit above the blurred background */
+    #word, #sentence-context { position: relative; z-index: 2; }
+
     /* ── Top mode indicator ───────────────────────────────────── */
     #mode-indicator {
       position: fixed;
@@ -168,25 +182,31 @@
       gap: 0.5rem;
     }
 
-    /* ── Peek overlay ─────────────────────────────────────────── */
-    #peek-overlay {
+    /* ── Peek overlay + blur bg share the same layout so toggling
+          between them doesn't shift the text around ───────────── */
+    #peek-overlay, #blur-bg {
       position: fixed;
       inset: 0;
-      background: #0f0f0f;
-      padding: clamp(2.5rem, 6vw, 5rem) clamp(2rem, 10vw, 9rem);
-      overflow-y: auto;
-      opacity: 0;
-      pointer-events: none;
-      transition: opacity 0.18s;
+      padding: clamp(2.5rem, 6vw, 5rem) clamp(2rem, 10vw, 9rem) 9rem;
+      font-family: inherit;
       font-size: 1.05rem;
       line-height: 1.9;
       color: #b0b0b0;
     }
+    #peek-overlay {
+      background: #0f0f0f;
+      overflow-y: auto;
+      opacity: 0;
+      pointer-events: none;
+      transition: opacity 0.18s;
+      z-index: 50;
+    }
     #peek-overlay.visible { opacity: 1; pointer-events: all; }
-    #peek-overlay h1 { font-size: 2em;   font-weight: 600; margin: 1.2em 0 0.3em; color: #e8e8e8; }
-    #peek-overlay h2 { font-size: 1.5em; font-weight: 500; margin: 1.1em 0 0.3em; color: #dedede; }
-    #peek-overlay h3 { font-size: 1.2em; font-weight: 500; margin: 1em   0 0.3em; color: #d8d8d8; }
-    #peek-overlay p  { margin: 0.4em 0; }
+
+    #peek-overlay h1, #blur-bg h1 { font-size: 2em;   font-weight: 600; margin: 1.2em 0 0.3em; color: #e8e8e8; }
+    #peek-overlay h2, #blur-bg h2 { font-size: 1.5em; font-weight: 500; margin: 1.1em 0 0.3em; color: #dedede; }
+    #peek-overlay h3, #blur-bg h3 { font-size: 1.2em; font-weight: 500; margin: 1em   0 0.3em; color: #d8d8d8; }
+    #peek-overlay p,  #blur-bg p  { margin: 0.4em 0; }
     #peek-overlay strong { color: #e0e0e0; font-weight: 600; }
     #peek-overlay em     { font-style: italic; }
     #peek-overlay .current-word { color: #e8e8e8; border-bottom: 1px solid #555; }
@@ -247,6 +267,7 @@
 </head>
 <body>
 
+  <div id="blur-bg"></div>
   <div id="mode-indicator"></div>
   <div id="sentence-context"></div>
   <div id="word"></div>
@@ -282,6 +303,7 @@
       <span class="goal-label">mode</span>
       <button class="btn mode-btn" data-mode="word">word</button>
       <button class="btn mode-btn" data-mode="sentence">sentence</button>
+      <button class="btn" id="blur-toggle">blur</button>
     </div>
   </div>
 
@@ -326,6 +348,7 @@
     const saveCancel  = document.getElementById('save-cancel');
     const saveConfirm = document.getElementById('save-confirm');
     const sentenceEl  = document.getElementById('sentence-context');
+    const blurBgEl    = document.getElementById('blur-bg');
 
     // ── Writing state ──────────────────────────────────────────────────────────
     let fullText   = '';
@@ -385,9 +408,19 @@
       sentenceEl.textContent = getSentenceContext();
     }
 
+    function updateBlurBg() {
+      if (!document.body.classList.contains('blur-on')) {
+        blurBgEl.innerHTML = '';
+        return;
+      }
+      blurBgEl.innerHTML = renderMarkdown(fullText);
+    }
+
     // ── Display mode (word / sentence) — persisted ─────────────────────────────
     const LS_MODE = 'streamtype.mode';
     function setMode(mode) {
+      // 'word' or 'sentence' — blur is now an independent toggle
+      if (mode !== 'sentence') mode = 'word';
       document.body.classList.toggle('sentence-mode', mode === 'sentence');
       localStorage.setItem(LS_MODE, mode);
       document.querySelectorAll('.mode-btn').forEach(b => {
@@ -402,6 +435,21 @@
         e.preventDefault();
         setMode(btn.dataset.mode);
       });
+    });
+
+    // ── Blur toggle (independent of display mode) ──────────────────────────────
+    const LS_BLUR = 'streamtype.blur';
+    const blurToggleBtn = document.getElementById('blur-toggle');
+    function setBlur(on) {
+      document.body.classList.toggle('blur-on', on);
+      blurToggleBtn.classList.toggle('selected', on);
+      localStorage.setItem(LS_BLUR, on ? '1' : '0');
+      updateBlurBg();
+    }
+    setBlur(localStorage.getItem(LS_BLUR) === '1');
+    blurToggleBtn.addEventListener('click', e => {
+      e.preventDefault();
+      setBlur(!document.body.classList.contains('blur-on'));
     });
 
     // Prevent buttons from stealing keyboard focus (otherwise typing stops working
@@ -546,6 +594,7 @@
 
       updateProgress();
       renderSentenceContext();
+      updateBlurBg();
     }
 
     // ── Backspace ──────────────────────────────────────────────────────────────
@@ -569,6 +618,7 @@
       if (!fading) renderWord();
       updateProgress();
       renderSentenceContext();
+      updateBlurBg();
     }
 
     // ── Markdown renderer ──────────────────────────────────────────────────────
