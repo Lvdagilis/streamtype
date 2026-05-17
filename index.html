@@ -1,0 +1,753 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>streamtype</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      background: #0f0f0f;
+      color: #e8e8e8;
+      font-family: 'Georgia', serif;
+      height: 100dvh;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      overflow: hidden;
+    }
+
+    /* ── Word display ─────────────────────────────────────────── */
+    #word {
+      font-weight: 400;
+      letter-spacing: 0.02em;
+      min-height: 1.2em;
+      text-align: center;
+      padding: 0 2rem;
+      transition: opacity 0.12s ease, font-size 0.2s ease;
+      user-select: none;
+      font-size: clamp(2rem, 8vw, 5rem); /* default = medium */
+    }
+    #word.fade { opacity: 0; }
+
+    body.size-s #word { font-size: clamp(1rem,   3vw,   1.8rem); }
+    body.size-m #word { font-size: clamp(2rem,   8vw,   5rem);   }
+    body.size-l #word { font-size: clamp(3rem,  12vw,   7.5rem); }
+
+    /* ── Sentence context (dim, above the word) ───────────────── */
+    #sentence-context {
+      max-width: 70vw;
+      text-align: center;
+      color: #555;
+      font-family: inherit;
+      font-style: italic;
+      line-height: 1.6;
+      margin-bottom: 1.2rem;
+      min-height: 1.6em;
+      transition: opacity 0.25s ease;
+      user-select: none;
+      display: none;
+    }
+    body.sentence-mode #sentence-context { display: block; }
+    #sentence-context.fade-out { opacity: 0; }
+
+    body.size-s #sentence-context { font-size: 0.72rem; margin-bottom: 0.5rem; }
+    body.size-m #sentence-context { font-size: clamp(0.85rem, 1.8vw, 1.05rem); }
+    body.size-l #sentence-context { font-size: clamp(1rem, 2.3vw, 1.4rem); }
+
+    /* ── Top mode indicator ───────────────────────────────────── */
+    #mode-indicator {
+      position: fixed;
+      top: 1.5rem;
+      left: 50%;
+      transform: translateX(-50%);
+      font-size: 0.7rem;
+      color: #6a6a6a;
+      letter-spacing: 0.15em;
+      text-transform: uppercase;
+      min-height: 1em;
+      white-space: nowrap;
+    }
+
+    #hint {
+      position: fixed;
+      bottom: 2.9rem;
+      font-size: 0.78rem;
+      color: #555;
+      letter-spacing: 0.1em;
+      text-transform: uppercase;
+      transition: opacity 0.5s;
+      pointer-events: none;
+    }
+    #hint.hidden { opacity: 0; }
+
+    /* ── Progress bar ─────────────────────────────────────────── */
+    #progress-bar {
+      position: fixed;
+      bottom: 0;
+      left: 0;
+      height: 2px;
+      width: 0%;
+      background: #333;
+      transition: width 0.4s ease, background 0.4s ease;
+    }
+    #progress-bar.near { background: #4a7a4a; }
+    #progress-bar.done { background: #5e9b5e; }
+
+    #stat-strip {
+      position: fixed;
+      bottom: 0.5rem;
+      left: 50%;
+      transform: translateX(-50%);
+      font-size: 0.66rem;
+      color: #555;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+      white-space: nowrap;
+      pointer-events: none;
+      transition: color 0.4s;
+    }
+    #stat-strip.near { color: #6e9c6e; }
+    #stat-strip.done { color: #8cc88c; }
+
+    /* ── Buttons ──────────────────────────────────────────────── */
+    .btn {
+      background: none;
+      border: 1px solid #3a3a3a;
+      color: #7a7a7a;
+      padding: 0.32rem 0.7rem;
+      border-radius: 4px;
+      cursor: pointer;
+      font-family: inherit;
+      font-size: 0.68rem;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+      transition: border-color 0.15s, color 0.15s, background 0.15s;
+      user-select: none;
+      -webkit-user-select: none;
+      flex-shrink: 0;
+    }
+    .btn:hover     { border-color: #5a5a5a; color: #b0b0b0; }
+    .btn.active    { border-color: #888;    color: #ddd; }
+    .btn.selected  { border-color: #6a6a6a; color: #cfcfcf; background: #1c1c1c; }
+    .btn.primary   { border-color: #5e8e5e; color: #b8dab8; }
+    .btn.primary:hover { border-color: #7eae7e; color: #d8f4d8; }
+
+    /* ── Bottom-left controls (goals + size) ──────────────────── */
+    #controls-left {
+      position: fixed;
+      bottom: 1.4rem;
+      left: 1.5rem;
+      display: flex;
+      flex-direction: column;
+      gap: 0.4rem;
+      align-items: flex-start;
+    }
+
+    .goal-row {
+      display: flex;
+      align-items: center;
+      gap: 0.35rem;
+    }
+    .goal-label {
+      font-size: 0.6rem;
+      color: #5a5a5a;
+      letter-spacing: 0.12em;
+      text-transform: uppercase;
+      width: 3rem;
+      flex-shrink: 0;
+    }
+
+    #controls-right {
+      position: fixed;
+      bottom: 1.4rem;
+      right: 1.5rem;
+      display: flex;
+      gap: 0.5rem;
+    }
+
+    /* ── Peek overlay ─────────────────────────────────────────── */
+    #peek-overlay {
+      position: fixed;
+      inset: 0;
+      background: #0f0f0f;
+      padding: clamp(2.5rem, 6vw, 5rem) clamp(2rem, 10vw, 9rem);
+      overflow-y: auto;
+      opacity: 0;
+      pointer-events: none;
+      transition: opacity 0.18s;
+      font-size: 1.05rem;
+      line-height: 1.9;
+      color: #b0b0b0;
+    }
+    #peek-overlay.visible { opacity: 1; pointer-events: all; }
+    #peek-overlay h1 { font-size: 2em;   font-weight: 600; margin: 1.2em 0 0.3em; color: #e8e8e8; }
+    #peek-overlay h2 { font-size: 1.5em; font-weight: 500; margin: 1.1em 0 0.3em; color: #dedede; }
+    #peek-overlay h3 { font-size: 1.2em; font-weight: 500; margin: 1em   0 0.3em; color: #d8d8d8; }
+    #peek-overlay p  { margin: 0.4em 0; }
+    #peek-overlay strong { color: #e0e0e0; font-weight: 600; }
+    #peek-overlay em     { font-style: italic; }
+    #peek-overlay .current-word { color: #e8e8e8; border-bottom: 1px solid #555; }
+
+    /* ── Save modal ───────────────────────────────────────────── */
+    #save-modal {
+      position: fixed;
+      inset: 0;
+      background: rgba(0, 0, 0, 0.78);
+      display: none;
+      align-items: center;
+      justify-content: center;
+      z-index: 100;
+    }
+    #save-modal.visible { display: flex; }
+
+    .modal {
+      background: #181818;
+      border: 1px solid #333;
+      border-radius: 6px;
+      padding: 1.6rem 1.6rem 1.3rem;
+      min-width: 360px;
+      max-width: 90vw;
+      display: flex;
+      flex-direction: column;
+      gap: 1rem;
+      font-family: inherit;
+    }
+    .modal-label {
+      font-size: 0.7rem;
+      color: #888;
+      letter-spacing: 0.15em;
+      text-transform: uppercase;
+    }
+    .modal-hint {
+      font-size: 0.7rem;
+      color: #555;
+    }
+    #tags-input {
+      background: #0f0f0f;
+      border: 1px solid #2e2e2e;
+      color: #ddd;
+      padding: 0.6rem 0.8rem;
+      border-radius: 4px;
+      font-family: inherit;
+      font-size: 0.95rem;
+      outline: none;
+      transition: border-color 0.15s;
+    }
+    #tags-input:focus { border-color: #5a5a5a; }
+    .modal-actions {
+      display: flex;
+      gap: 0.5rem;
+      justify-content: flex-end;
+      margin-top: 0.3rem;
+    }
+  </style>
+</head>
+<body>
+
+  <div id="mode-indicator"></div>
+  <div id="sentence-context"></div>
+  <div id="word"></div>
+  <div id="hint">start typing</div>
+
+  <div id="peek-overlay"></div>
+  <div id="progress-bar"></div>
+  <div id="stat-strip"></div>
+
+  <!-- Left: goals + size -->
+  <div id="controls-left">
+    <div class="goal-row">
+      <span class="goal-label">words</span>
+      <button class="btn goal-word" data-words="250">250</button>
+      <button class="btn goal-word" data-words="500">500</button>
+      <button class="btn goal-word" data-words="750" title="≈ 3 morning pages">750</button>
+    </div>
+    <div class="goal-row">
+      <span class="goal-label">timer</span>
+      <button class="btn goal-time" data-mins="5">5m</button>
+      <button class="btn goal-time" data-mins="10">10m</button>
+      <button class="btn goal-time" data-mins="15">15m</button>
+      <button class="btn goal-time" data-mins="20">20m</button>
+      <button class="btn goal-time" data-mins="30">30m</button>
+    </div>
+    <div class="goal-row">
+      <span class="goal-label">size</span>
+      <button class="btn size-btn" data-size="s">S</button>
+      <button class="btn size-btn" data-size="m">M</button>
+      <button class="btn size-btn" data-size="l">L</button>
+    </div>
+    <div class="goal-row">
+      <span class="goal-label">mode</span>
+      <button class="btn mode-btn" data-mode="word">word</button>
+      <button class="btn mode-btn" data-mode="sentence">sentence</button>
+    </div>
+  </div>
+
+  <!-- Right: peek + save -->
+  <div id="controls-right">
+    <button id="peek-btn" class="btn">peek</button>
+    <button id="save-btn" class="btn">save</button>
+  </div>
+
+  <!-- Save modal -->
+  <div id="save-modal">
+    <div class="modal">
+      <div class="modal-label">save journal entry</div>
+      <input id="tags-input"
+             type="text"
+             placeholder="tags (comma or space separated, optional)"
+             autocomplete="off"
+             autocorrect="off"
+             autocapitalize="off"
+             spellcheck="false">
+      <div class="modal-hint">enter to save · esc to cancel</div>
+      <div class="modal-actions">
+        <button class="btn" id="save-cancel">cancel</button>
+        <button class="btn primary" id="save-confirm">save</button>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    // ── Elements ───────────────────────────────────────────────────────────────
+    const wordEl     = document.getElementById('word');
+    const hintEl     = document.getElementById('hint');
+    const modeEl     = document.getElementById('mode-indicator');
+    const peekEl     = document.getElementById('peek-overlay');
+    const peekBtn    = document.getElementById('peek-btn');
+    const saveBtn    = document.getElementById('save-btn');
+    const progressEl = document.getElementById('progress-bar');
+    const statEl     = document.getElementById('stat-strip');
+
+    const saveModal   = document.getElementById('save-modal');
+    const tagsInput   = document.getElementById('tags-input');
+    const saveCancel  = document.getElementById('save-cancel');
+    const saveConfirm = document.getElementById('save-confirm');
+    const sentenceEl  = document.getElementById('sentence-context');
+
+    // ── Writing state ──────────────────────────────────────────────────────────
+    let fullText   = '';
+    let current    = '';
+    let linePrefix = '';
+    let boldMode   = false;
+    let italicMode = false;
+    let fading     = false;
+
+    // ── Goal state ─────────────────────────────────────────────────────────────
+    let wordGoal     = 0;
+    let timerGoal    = 0;
+    let timerLeft    = 0;
+    let timerHandle  = null;
+    let timerStarted = false;
+
+    // ── Font size (persisted) ──────────────────────────────────────────────────
+    const LS_SIZE = 'streamtype.fontsize';
+    function setFontSize(size) {
+      document.body.classList.remove('size-s', 'size-m', 'size-l');
+      document.body.classList.add('size-' + size);
+      localStorage.setItem(LS_SIZE, size);
+      document.querySelectorAll('.size-btn').forEach(b => {
+        b.classList.toggle('selected', b.dataset.size === size);
+      });
+    }
+    setFontSize(localStorage.getItem(LS_SIZE) || 'm');
+
+    document.querySelectorAll('.size-btn').forEach(btn => {
+      btn.addEventListener('click', e => {
+        e.preventDefault();
+        setFontSize(btn.dataset.size);
+      });
+    });
+
+    // ── Sentence context (derived from fullText) ───────────────────────────────
+    function getSentenceContext() {
+      if (!fullText) return '';
+      const trimmed = fullText.replace(/\s+$/, '');
+      let boundary = -1;
+      for (let i = trimmed.length - 1; i >= 0; i--) {
+        const c = trimmed[i];
+        if (c === '.' || c === '!' || c === '?' || c === '\n') { boundary = i; break; }
+      }
+      const slice = boundary === -1 ? trimmed : trimmed.slice(boundary + 1);
+      // Strip markdown emphasis/heading markers for cleaner reading
+      return slice
+        .replace(/\*{1,3}/g, '')
+        .replace(/^#{1,6}\s+/gm, '')
+        .trim();
+    }
+    function renderSentenceContext() {
+      if (!document.body.classList.contains('sentence-mode')) {
+        sentenceEl.textContent = '';
+        return;
+      }
+      sentenceEl.textContent = getSentenceContext();
+    }
+
+    // ── Display mode (word / sentence) — persisted ─────────────────────────────
+    const LS_MODE = 'streamtype.mode';
+    function setMode(mode) {
+      document.body.classList.toggle('sentence-mode', mode === 'sentence');
+      localStorage.setItem(LS_MODE, mode);
+      document.querySelectorAll('.mode-btn').forEach(b => {
+        b.classList.toggle('selected', b.dataset.mode === mode);
+      });
+      renderSentenceContext();
+    }
+    setMode(localStorage.getItem(LS_MODE) || 'word');
+
+    document.querySelectorAll('.mode-btn').forEach(btn => {
+      btn.addEventListener('click', e => {
+        e.preventDefault();
+        setMode(btn.dataset.mode);
+      });
+    });
+
+    // Prevent buttons from stealing keyboard focus (otherwise typing stops working
+    // after any button interaction since global keydown filters out BUTTON targets).
+    document.querySelectorAll('.btn').forEach(b => {
+      b.addEventListener('mousedown', e => e.preventDefault());
+    });
+
+    // ── Word counting ──────────────────────────────────────────────────────────
+    function wordCount() {
+      const all = (fullText + ' ' + current).trim();
+      return all === '' ? 0 : all.split(/\s+/).filter(Boolean).length;
+    }
+
+    // ── Progress strip + bar ───────────────────────────────────────────────────
+    function updateProgress() {
+      const wc    = wordCount();
+      const parts = [];
+      let pct     = 0;
+      let state   = '';
+
+      if (wordGoal > 0) {
+        const r = Math.min(wc / wordGoal, 1);
+        pct   = r * 100;
+        state = r >= 1 ? 'done' : r >= 0.85 ? 'near' : '';
+        parts.push(`${wc} / ${wordGoal} words`);
+      }
+
+      if (timerGoal > 0) {
+        const m = Math.floor(timerLeft / 60);
+        const s = timerLeft % 60;
+        parts.push(`${m}:${String(s).padStart(2,'0')} left`);
+
+        if (wordGoal === 0) {
+          const elapsed = timerGoal - timerLeft;
+          const r = Math.min(elapsed / timerGoal, 1);
+          pct   = r * 100;
+          state = r >= 1 ? 'done' : r >= 0.85 ? 'near' : '';
+        }
+      }
+
+      progressEl.style.width = pct + '%';
+      progressEl.className   = state || '';
+      statEl.textContent     = parts.join('  ·  ');
+      statEl.className       = state;
+    }
+
+    // ── Timer ──────────────────────────────────────────────────────────────────
+    function startTimerIfNeeded() {
+      if (!timerStarted && timerGoal > 0) {
+        timerStarted = true;
+        timerLeft    = timerGoal;
+        timerHandle  = setInterval(() => {
+          timerLeft = Math.max(0, timerLeft - 1);
+          updateProgress();
+          if (timerLeft === 0) {
+            clearInterval(timerHandle);
+            timerHandle = null;
+          }
+        }, 1000);
+      }
+    }
+
+    // ── Goal buttons ───────────────────────────────────────────────────────────
+    document.querySelectorAll('.goal-word').forEach(btn => {
+      btn.addEventListener('click', e => {
+        e.preventDefault();
+        const v = parseInt(btn.dataset.words);
+        if (wordGoal === v) {
+          wordGoal = 0;
+          btn.classList.remove('selected');
+        } else {
+          document.querySelectorAll('.goal-word').forEach(b => b.classList.remove('selected'));
+          wordGoal = v;
+          btn.classList.add('selected');
+        }
+        updateProgress();
+      });
+    });
+
+    document.querySelectorAll('.goal-time').forEach(btn => {
+      btn.addEventListener('click', e => {
+        e.preventDefault();
+        const mins = parseInt(btn.dataset.mins);
+        const secs = mins * 60;
+        if (timerGoal === secs && !timerStarted) {
+          timerGoal = 0;
+          btn.classList.remove('selected');
+        } else {
+          document.querySelectorAll('.goal-time').forEach(b => b.classList.remove('selected'));
+          if (timerHandle) clearInterval(timerHandle);
+          timerGoal    = secs;
+          timerLeft    = secs;
+          timerStarted = false;
+          btn.classList.add('selected');
+        }
+        updateProgress();
+      });
+    });
+
+    // ── Rendering ──────────────────────────────────────────────────────────────
+    function renderWord() { wordEl.textContent = current; }
+
+    function updateModeIndicator() {
+      const parts = [];
+      if (linePrefix)  parts.push(linePrefix.trim());
+      if (boldMode)    parts.push('bold');
+      if (italicMode)  parts.push('italic');
+      modeEl.textContent = parts.join(' · ');
+    }
+
+    function wrapInline(word) {
+      if (boldMode && italicMode) return `***${word}***`;
+      if (boldMode)               return `**${word}**`;
+      if (italicMode)             return `*${word}*`;
+      return word;
+    }
+
+    // ── Commit ─────────────────────────────────────────────────────────────────
+    function commit(sep) {
+      if (current === '' && sep === ' ') return;
+      const word = wrapInline(current);
+
+      if (linePrefix) {
+        if (fullText && !fullText.endsWith('\n')) fullText += '\n';
+        fullText  += linePrefix + word + sep;
+        linePrefix = '';
+        updateModeIndicator();
+      } else {
+        fullText += word + sep;
+      }
+
+      current = '';
+      fading  = true;
+      wordEl.classList.add('fade');
+
+      setTimeout(() => {
+        fading = false;
+        wordEl.classList.remove('fade');
+        renderWord();
+      }, 120);
+
+      updateProgress();
+      renderSentenceContext();
+    }
+
+    // ── Backspace ──────────────────────────────────────────────────────────────
+    function backspace() {
+      if (current.length > 0) {
+        current = current.slice(0, -1);
+        if (!fading) renderWord();
+        updateProgress();
+        return;
+      }
+      const trimmed = fullText.trimEnd();
+      if (trimmed.length === 0) return;
+
+      const lastSep = Math.max(trimmed.lastIndexOf(' '), trimmed.lastIndexOf('\n'));
+      if (lastSep === -1) { current = trimmed; fullText = ''; }
+      else {
+        current  = trimmed.slice(lastSep + 1);
+        fullText = fullText.slice(0, lastSep + 1);
+      }
+      current = current.replace(/^\*{1,3}([\s\S]*?)\*{1,3}$/, '$1');
+      if (!fading) renderWord();
+      updateProgress();
+      renderSentenceContext();
+    }
+
+    // ── Markdown renderer ──────────────────────────────────────────────────────
+    function escHtml(s) {
+      return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+    }
+    function inlineMd(s) {
+      return escHtml(s)
+        .replace(/\*\*\*(.+?)\*\*\*/g, '<strong><em>$1</em></strong>')
+        .replace(/\*\*(.+?)\*\*/g,     '<strong>$1</strong>')
+        .replace(/\*(.+?)\*/g,         '<em>$1</em>');
+    }
+    function renderMarkdown(text) {
+      return text.split('\n').map(line => {
+        if (/^### /.test(line)) return `<h3>${inlineMd(line.slice(4))}</h3>`;
+        if (/^## /.test(line))  return `<h2>${inlineMd(line.slice(3))}</h2>`;
+        if (/^# /.test(line))   return `<h1>${inlineMd(line.slice(2))}</h1>`;
+        if (line.trim() === '')  return '<p>&nbsp;</p>';
+        return `<p>${inlineMd(line)}</p>`;
+      }).join('');
+    }
+
+    // ── Peek ───────────────────────────────────────────────────────────────────
+    function showPeek() {
+      let pendingLine = linePrefix + current;
+      let all = fullText;
+      if (pendingLine) {
+        if (all && !all.endsWith('\n')) all += '\n';
+        all += pendingLine;
+      }
+      peekEl.innerHTML = renderMarkdown(all);
+
+      if (current) {
+        const walker = document.createTreeWalker(peekEl, NodeFilter.SHOW_TEXT);
+        let last;
+        while (walker.nextNode()) last = walker.currentNode;
+        if (last && last.textContent.trim()) {
+          const span = document.createElement('span');
+          span.className   = 'current-word';
+          span.textContent = last.textContent;
+          last.replaceWith(span);
+        }
+      }
+      peekEl.classList.add('visible');
+      peekBtn.classList.add('active');
+    }
+    function hidePeek() {
+      peekEl.classList.remove('visible');
+      peekBtn.classList.remove('active');
+    }
+
+    peekBtn.addEventListener('mousedown',  e => { e.preventDefault(); showPeek(); });
+    peekBtn.addEventListener('touchstart', e => { e.preventDefault(); showPeek(); }, { passive: false });
+    document.addEventListener('mouseup',   hidePeek);
+    document.addEventListener('touchend',  hidePeek);
+
+    // ── Save dialog ────────────────────────────────────────────────────────────
+    function openSaveDialog() {
+      if (fullText.trim() === '' && current.trim() === '') return; // nothing to save
+      saveModal.classList.add('visible');
+      tagsInput.value = '';
+      setTimeout(() => tagsInput.focus(), 30);
+    }
+    function closeSaveDialog() {
+      saveModal.classList.remove('visible');
+    }
+
+    saveBtn.addEventListener('click', openSaveDialog);
+    saveCancel.addEventListener('click', closeSaveDialog);
+    saveConfirm.addEventListener('click', () => {
+      const tags = parseTags(tagsInput.value);
+      closeSaveDialog();
+      doSave(tags);
+    });
+    tagsInput.addEventListener('keydown', e => {
+      // keep modal typing isolated from global handler
+      e.stopPropagation();
+      if (e.key === 'Enter')  { e.preventDefault(); saveConfirm.click(); }
+      if (e.key === 'Escape') { e.preventDefault(); closeSaveDialog(); }
+    });
+
+    function parseTags(s) {
+      return s.split(/[,\s]+/).map(t => t.trim()).filter(Boolean);
+    }
+
+    // ── Save (write the file) ──────────────────────────────────────────────────
+    async function doSave(tags) {
+      const now = new Date();
+      let fm = `---\ncreated: ${now.toISOString()}\n`;
+
+      try {
+        const pos = await new Promise((res, rej) =>
+          navigator.geolocation.getCurrentPosition(res, rej, { timeout: 5000 })
+        );
+        fm += `location: ${pos.coords.latitude.toFixed(5)}, ${pos.coords.longitude.toFixed(5)}\n`;
+      } catch (_) { /* declined or unavailable */ }
+
+      if (tags && tags.length) {
+        fm += `tags: [${tags.join(', ')}]\n`;
+      }
+
+      fm += `---\n\n`;
+      const content  = fm + fullText + current;
+      const slug     = now.toISOString().replace(/[:.]/g, '-').slice(0, 19);
+      const filename = `stream-${slug}.md`;
+
+      if (window.showSaveFilePicker) {
+        try {
+          const fh = await window.showSaveFilePicker({
+            suggestedName: filename,
+            types: [{ description: 'Markdown', accept: { 'text/markdown': ['.md'] } }],
+          });
+          const w = await fh.createWritable();
+          await w.write(content);
+          await w.close();
+          return;
+        } catch (e) {
+          if (e.name === 'AbortError') return;
+        }
+      }
+
+      const a   = document.createElement('a');
+      a.href     = URL.createObjectURL(new Blob([content], { type: 'text/markdown' }));
+      a.download = filename;
+      a.click();
+      setTimeout(() => URL.revokeObjectURL(a.href), 10000);
+    }
+
+    // ── Keyboard ──────────────────────────────────────────────────────────────
+    document.addEventListener('keydown', e => {
+      // ignore typing inside controls / modal input
+      if (e.target.tagName === 'BUTTON' || e.target.tagName === 'INPUT') return;
+      if (saveModal.classList.contains('visible')) return;
+
+      const mod = e.metaKey || e.ctrlKey;
+
+      if (mod && e.key === 's') { e.preventDefault(); openSaveDialog(); return; }
+      if (e.key === 'Tab')      { e.preventDefault(); showPeek(); return; }
+
+      if (mod && ['1','2','3'].includes(e.key)) {
+        e.preventDefault();
+        if (current !== '') commit('\n');
+        else if (fullText && !fullText.endsWith('\n')) fullText += '\n';
+        linePrefix = '#'.repeat(parseInt(e.key)) + ' ';
+        boldMode   = false;
+        italicMode = false;
+        updateModeIndicator();
+        return;
+      }
+
+      if (mod && e.key === 'b') { e.preventDefault(); boldMode   = !boldMode;   updateModeIndicator(); return; }
+      if (mod && e.key === 'i') { e.preventDefault(); italicMode = !italicMode; updateModeIndicator(); return; }
+
+      if (e.key === ' ' || e.key === 'Enter') {
+        e.preventDefault();
+        hintEl.classList.add('hidden');
+        startTimerIfNeeded();
+        commit(e.key === 'Enter' ? '\n' : ' ');
+        return;
+      }
+
+      if (e.key === 'Backspace') {
+        e.preventDefault();
+        backspace();
+        return;
+      }
+
+      if (e.key.length === 1 && !mod) {
+        hintEl.classList.add('hidden');
+        startTimerIfNeeded();
+        current += e.key;
+        if (!fading) renderWord();
+        updateProgress();
+      }
+    });
+
+    document.addEventListener('keyup', e => {
+      if (e.key === 'Tab') hidePeek();
+    });
+  </script>
+</body>
+</html>
